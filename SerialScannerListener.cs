@@ -148,19 +148,21 @@ internal sealed class SerialScannerListener : IDisposable
     {
         Console.WriteLine($"Scanned: {rawValue}");
 
-        if (TryGetLocalPath(rawValue, out var localPath))
+        var resolvedValue = ResolveScanTarget(rawValue);
+
+        if (TryGetLocalPath(resolvedValue, out var localPath))
         {
             OpenLocalPath(localPath);
             return;
         }
 
         if (
-            Uri.TryCreate(rawValue, UriKind.Absolute, out var uri)
+            Uri.TryCreate(resolvedValue, UriKind.Absolute, out var uri)
             && !uri.IsFile
             && !string.IsNullOrWhiteSpace(uri.Scheme)
         )
         {
-            Process.Start(new ProcessStartInfo { FileName = rawValue, UseShellExecute = true });
+            Process.Start(new ProcessStartInfo { FileName = resolvedValue, UseShellExecute = true });
 
             return;
         }
@@ -168,6 +170,17 @@ internal sealed class SerialScannerListener : IDisposable
         Console.WriteLine(
             "Scan ignored because it is neither a valid absolute URL nor a local path."
         );
+    }
+
+    private string ResolveScanTarget(string rawValue)
+    {
+        if (_config.TryGetBarcodeTarget(rawValue, out var mappedTarget))
+        {
+            Console.WriteLine($"Mapped barcode '{rawValue}' to '{mappedTarget}'.");
+            return mappedTarget;
+        }
+
+        return rawValue;
     }
 
     private static bool TryGetLocalPath(string input, out string localPath)

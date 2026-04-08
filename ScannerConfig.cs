@@ -12,6 +12,8 @@ internal sealed class ScannerConfig
     public int ReadTimeoutMs { get; set; } = 500;
     public int IdleFlushMs { get; set; } = 150;
     public string[] BrowserFileExtensions { get; set; } = [".html", ".htm"];
+    public Dictionary<string, string> BarcodeTargets { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public void Validate()
     {
@@ -40,12 +42,27 @@ internal sealed class ScannerConfig
             .Select(NormalizeExtension)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        BarcodeTargets = BarcodeTargets
+            .Where(pair =>
+                !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value)
+            )
+            .ToDictionary(
+                pair => pair.Key.Trim(),
+                pair => pair.Value.Trim(),
+                StringComparer.OrdinalIgnoreCase
+            );
     }
 
     public bool ShouldOpenInBrowser(string path)
     {
         var extension = Path.GetExtension(path);
         return BrowserFileExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public bool TryGetBarcodeTarget(string barcode, out string target)
+    {
+        return BarcodeTargets.TryGetValue(barcode.Trim(), out target!);
     }
 
     private static string NormalizeExtension(string extension)

@@ -19,5 +19,9 @@
     ".png",
     ".jpg",
     ".pdf"
-  ]
+  ],
+  "barcodeTargets": {
+    "123456789012": "https://example.com/product/123456789012",
+    "987654321098": "C:\\Docs\\price-list.pdf"
+  }
 }
