@@ -1,0 +1,20 @@
+{
+  "portName": "COM4",
+  "baudRate": 9600,
+  "dataBits": 8,
+  "parity": "None",
+  "stopBits": "One",
+  "handshake": "None",
+  "newLine": "\r\n",
+  "dtrEnable": false,
+  "rtsEnable": false,
+  "readTimeoutMs": 500,
+  "idleFlushMs": 150,
+  "browserFileExtensions": [
+    ".htm",
+    ".html",
+    ".pdf",
+    ".svg",
+    ".txt"
+  ]
+}
