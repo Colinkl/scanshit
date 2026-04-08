@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.IO.Ports;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -15,6 +16,7 @@ internal sealed class ScannerTrayContext : ApplicationContext
     private readonly Bitmap? _menuLogo;
     private readonly ToolStripMenuItem _statusMenuItem;
     private readonly CancellationTokenSource _shutdownSource = new();
+    private CancellationTokenSource? _listenerSource;
     private Task? _scannerTask;
     private string _statusText = "Starting scanner listener";
 
@@ -29,6 +31,7 @@ internal sealed class ScannerTrayContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_statusMenuItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Select COM port", null, (_, _) => SelectComPort()));
         menu.Items.Add(new ToolStripMenuItem("Open config", null, (_, _) => OpenConfig()));
         menu.Items.Add(new ToolStripMenuItem("Restart listener", null, (_, _) => RestartScanner()));
         menu.Items.Add(new ToolStripSeparator());
@@ -49,9 +52,34 @@ internal sealed class ScannerTrayContext : ApplicationContext
 
     private void StartScanner()
     {
+        var previousSource = _listenerSource;
+        var previousTask = _scannerTask;
+
+        _listenerSource = CancellationTokenSource.CreateLinkedTokenSource(_shutdownSource.Token);
+
         var app = new ScannerApplication(UpdateStatus, ShowError);
-        _scannerTask = Task.Run(() => app.RunAsync(_args, _shutdownSource.Token));
+        _scannerTask = Task.Run(() => app.RunAsync(_args, _listenerSource.Token));
         _ = ObserveScannerTaskAsync(_scannerTask);
+
+        if (previousSource is null)
+        {
+            return;
+        }
+
+        previousSource.Cancel();
+
+        if (previousTask is null)
+        {
+            previousSource.Dispose();
+            return;
+        }
+
+        _ = previousTask.ContinueWith(
+            _ => previousSource.Dispose(),
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default
+        );
     }
 
     private async Task ObserveScannerTaskAsync(Task scannerTask)
@@ -74,7 +102,61 @@ internal sealed class ScannerTrayContext : ApplicationContext
             return;
         }
 
-        ShowInfo("Restart requested. Restart the app from Startup or run the launcher again.");
+        RestartScannerInternal(showNotification: true);
+    }
+
+    private void SelectComPort()
+    {
+        try
+        {
+            var configPath = ScannerApplication.ResolveConfigPath(_args);
+            var config = ScannerApplication.LoadConfig(configPath);
+
+            using var form = new ComPortSelectorForm(config.PortName);
+            if (
+                form.ShowDialog() != DialogResult.OK
+                || string.IsNullOrWhiteSpace(form.SelectedPortName)
+            )
+            {
+                return;
+            }
+
+            if (
+                string.Equals(
+                    config.PortName,
+                    form.SelectedPortName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            config.PortName = form.SelectedPortName;
+            ScannerApplication.SaveConfig(configPath, config);
+            RestartScannerInternal(showNotification: false);
+            ShowInfo($"COM port changed to {config.PortName}");
+        }
+        catch (Exception exception)
+        {
+            ShowError($"Failed to update COM port: {exception.Message}");
+        }
+    }
+
+    private void RestartScannerInternal(bool showNotification)
+    {
+        if (_shutdownSource.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _listenerSource?.Cancel();
+        StartScanner();
+
+        if (showNotification)
+        {
+            ShowInfo("Listener restarted.");
+        }
     }
 
     private void OpenConfig()
@@ -193,16 +275,115 @@ internal sealed class ScannerTrayContext : ApplicationContext
     protected override void ExitThreadCore()
     {
         _shutdownSource.Cancel();
+        _listenerSource?.Cancel();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _menuLogo?.Dispose();
         _trayIcon?.Dispose();
+        _listenerSource?.Dispose();
         _shutdownSource.Dispose();
         base.ExitThreadCore();
     }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
+
+    private sealed class ComPortSelectorForm : Form
+    {
+        private readonly ComboBox _portsComboBox;
+        private readonly Button _okButton;
+
+        public ComPortSelectorForm(string currentPortName)
+        {
+            Text = "Select COM port";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterScreen;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            ClientSize = new Size(360, 150);
+
+            var label = new Label
+            {
+                Text = "Scanner COM port",
+                AutoSize = true,
+                Location = new Point(16, 18),
+            };
+
+            _portsComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Location = new Point(16, 44),
+                Size = new Size(240, 28),
+            };
+
+            var refreshButton = new Button
+            {
+                Text = "Refresh",
+                Location = new Point(268, 43),
+                Size = new Size(76, 30),
+            };
+            refreshButton.Click += (_, _) => PopulatePorts(currentPortName);
+
+            _okButton = new Button
+            {
+                Text = "Save",
+                DialogResult = DialogResult.OK,
+                Location = new Point(188, 100),
+                Size = new Size(75, 30),
+            };
+
+            var cancelButton = new Button
+            {
+                Text = "Cancel",
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(269, 100),
+                Size = new Size(75, 30),
+            };
+
+            AcceptButton = _okButton;
+            CancelButton = cancelButton;
+
+            Controls.Add(label);
+            Controls.Add(_portsComboBox);
+            Controls.Add(refreshButton);
+            Controls.Add(_okButton);
+            Controls.Add(cancelButton);
+
+            PopulatePorts(currentPortName);
+        }
+
+        public string? SelectedPortName => _portsComboBox.SelectedItem as string;
+
+        private void PopulatePorts(string preferredPortName)
+        {
+            preferredPortName = SelectedPortName ?? preferredPortName;
+
+            var portNames = SerialPort.GetPortNames()
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            _portsComboBox.BeginUpdate();
+            _portsComboBox.Items.Clear();
+            _portsComboBox.Items.AddRange(portNames);
+            _portsComboBox.EndUpdate();
+
+            var selectedPort = portNames.FirstOrDefault(name =>
+                string.Equals(name, preferredPortName, StringComparison.OrdinalIgnoreCase)
+            );
+
+            if (selectedPort is not null)
+            {
+                _portsComboBox.SelectedItem = selectedPort;
+            }
+            else if (_portsComboBox.Items.Count > 0)
+            {
+                _portsComboBox.SelectedIndex = 0;
+            }
+
+            _okButton.Enabled = _portsComboBox.Items.Count > 0;
+        }
+    }
 
     private sealed class ScancatMenuBanner : ToolStripControlHost
     {

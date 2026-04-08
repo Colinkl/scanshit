@@ -3,6 +3,12 @@ using System.Text.Json;
 internal sealed class ScannerApplication
 {
     private const string ConfigFileName = "scannerconfig.json";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+    };
+
     private readonly Action<string> _statusSink;
     private readonly Action<string> _errorSink;
 
@@ -17,8 +23,6 @@ internal sealed class ScannerApplication
         var configPath = ResolveConfigPath(args);
         var config = LoadConfig(configPath);
 
-        _statusSink($"Listening on {config.PortName}");
-
         while (!cancellationToken.IsCancellationRequested)
         {
             using var listener = new SerialScannerListener(config);
@@ -26,6 +30,7 @@ internal sealed class ScannerApplication
             try
             {
                 listener.Start();
+                _statusSink($"Listening on {config.PortName}");
                 await listener.WaitForShutdownAsync(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -39,17 +44,31 @@ internal sealed class ScannerApplication
 
             if (!cancellationToken.IsCancellationRequested)
             {
-                _statusSink($"Retrying {config.PortName} in 5 seconds");
-
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    await WaitToRetryAsync(config.PortName, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
             }
+        }
+    }
+
+    private Task WaitToRetryAsync(string portName, CancellationToken cancellationToken)
+    {
+        return WaitToRetryAsyncCore(portName, cancellationToken);
+    }
+
+    private async Task WaitToRetryAsyncCore(string portName, CancellationToken cancellationToken)
+    {
+        const int retrySeconds = 5;
+
+        for (var remainingSeconds = retrySeconds; remainingSeconds >= 1; remainingSeconds--)
+        {
+            _statusSink($"Retrying {portName} in {remainingSeconds}s");
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
         }
     }
 
@@ -74,10 +93,7 @@ internal sealed class ScannerApplication
         }
 
         var json = File.ReadAllText(configPath);
-        var config = JsonSerializer.Deserialize<ScannerConfig>(
-            json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-        );
+        var config = JsonSerializer.Deserialize<ScannerConfig>(json, JsonOptions);
 
         if (config is null)
         {
@@ -86,5 +102,12 @@ internal sealed class ScannerApplication
 
         config.Validate();
         return config;
+    }
+
+    public static void SaveConfig(string configPath, ScannerConfig config)
+    {
+        config.Validate();
+        var json = JsonSerializer.Serialize(config, JsonOptions);
+        File.WriteAllText(configPath, json);
     }
 }

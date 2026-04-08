@@ -1,16 +1,16 @@
 internal sealed class ScannerConfig
 {
-    public string PortName { get; init; } = "COM3";
-    public int BaudRate { get; init; } = 9600;
-    public int DataBits { get; init; } = 8;
-    public string Parity { get; init; } = nameof(System.IO.Ports.Parity.None);
-    public string StopBits { get; init; } = nameof(System.IO.Ports.StopBits.One);
-    public string Handshake { get; init; } = nameof(System.IO.Ports.Handshake.None);
-    public string NewLine { get; init; } = "\r\n";
-    public bool DtrEnable { get; init; }
-    public bool RtsEnable { get; init; }
-    public int ReadTimeoutMs { get; init; } = 500;
-    public int IdleFlushMs { get; init; } = 150;
+    public string PortName { get; set; } = "COM3";
+    public int BaudRate { get; set; } = 9600;
+    public int DataBits { get; set; } = 8;
+    public string Parity { get; set; } = nameof(System.IO.Ports.Parity.None);
+    public string StopBits { get; set; } = nameof(System.IO.Ports.StopBits.One);
+    public string Handshake { get; set; } = nameof(System.IO.Ports.Handshake.None);
+    public string NewLine { get; set; } = "\r\n";
+    public bool DtrEnable { get; set; }
+    public bool RtsEnable { get; set; }
+    public int ReadTimeoutMs { get; set; } = 500;
+    public int IdleFlushMs { get; set; } = 150;
     public string[] BrowserFileExtensions { get; set; } = [".html", ".htm"];
 
     public void Validate()
