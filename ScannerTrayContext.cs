@@ -6,9 +6,13 @@ using System.Windows.Forms;
 
 internal sealed class ScannerTrayContext : ApplicationContext
 {
+    private static readonly Size MenuLogoSize = new(64, 64);
+    private const int MenuHeaderHeight = 84;
+
     private readonly string[] _args;
     private readonly NotifyIcon _notifyIcon;
     private readonly Icon? _trayIcon;
+    private readonly Bitmap? _menuLogo;
     private readonly ToolStripMenuItem _statusMenuItem;
     private readonly CancellationTokenSource _shutdownSource = new();
     private Task? _scannerTask;
@@ -17,9 +21,12 @@ internal sealed class ScannerTrayContext : ApplicationContext
     public ScannerTrayContext(string[] args)
     {
         _args = args;
+        _menuLogo = LoadMenuLogo();
         _statusMenuItem = new ToolStripMenuItem(_statusText) { Enabled = false };
 
         var menu = new ContextMenuStrip();
+        menu.Items.Add(new ScancatMenuBanner(_menuLogo));
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_statusMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Open config", null, (_, _) => OpenConfig()));
@@ -53,9 +60,7 @@ internal sealed class ScannerTrayContext : ApplicationContext
         {
             await scannerTask;
         }
-        catch (OperationCanceledException) when (_shutdownSource.IsCancellationRequested)
-        {
-        }
+        catch (OperationCanceledException) when (_shutdownSource.IsCancellationRequested) { }
         catch (Exception exception)
         {
             ShowError($"Scanner stopped unexpectedly: {exception.Message}");
@@ -150,6 +155,25 @@ internal sealed class ScannerTrayContext : ApplicationContext
         }
     }
 
+    private static Bitmap? LoadMenuLogo()
+    {
+        try
+        {
+            using var resourceStream = GetLogoStream();
+            if (resourceStream is null)
+            {
+                return null;
+            }
+
+            using var image = Image.FromStream(resourceStream);
+            return new Bitmap(image, MenuLogoSize);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static Stream? GetLogoStream()
     {
         var assembly = Assembly.GetExecutingAssembly();
@@ -171,6 +195,7 @@ internal sealed class ScannerTrayContext : ApplicationContext
         _shutdownSource.Cancel();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _menuLogo?.Dispose();
         _trayIcon?.Dispose();
         _shutdownSource.Dispose();
         base.ExitThreadCore();
@@ -178,4 +203,62 @@ internal sealed class ScannerTrayContext : ApplicationContext
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
+
+    private sealed class ScancatMenuBanner : ToolStripControlHost
+    {
+        public ScancatMenuBanner(Image? logo)
+            : base(CreateContent(logo))
+        {
+            AutoSize = false;
+            Margin = Padding.Empty;
+            Padding = Padding.Empty;
+            Size = new Size(280, MenuHeaderHeight);
+        }
+
+        private static Control CreateContent(Image? logo)
+        {
+            var menuFont = SystemFonts.MenuFont ?? SystemFonts.DefaultFont;
+
+            var panel = new Panel
+            {
+                BackColor = Color.White,
+                Margin = Padding.Empty,
+                Padding = new Padding(10),
+                Size = new Size(280, MenuHeaderHeight),
+            };
+
+            var pictureBox = new PictureBox
+            {
+                Image = logo,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Location = new Point(10, 10),
+                Size = MenuLogoSize,
+            };
+
+            var titleLabel = new Label
+            {
+                AutoSize = false,
+                Text = "Scancat",
+                Font = new Font(menuFont.FontFamily, 12f, FontStyle.Bold),
+                TextAlign = ContentAlignment.BottomLeft,
+                Location = new Point(86, 16),
+                Size = new Size(170, 24),
+            };
+
+            var subtitleLabel = new Label
+            {
+                AutoSize = false,
+                Text = "Barcode scanner listener",
+                ForeColor = Color.DimGray,
+                TextAlign = ContentAlignment.TopLeft,
+                Location = new Point(86, 42),
+                Size = new Size(180, 20),
+            };
+
+            panel.Controls.Add(pictureBox);
+            panel.Controls.Add(titleLabel);
+            panel.Controls.Add(subtitleLabel);
+            return panel;
+        }
+    }
 }
