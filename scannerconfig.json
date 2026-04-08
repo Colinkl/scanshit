@@ -1,16 +1,16 @@
 {
-  "portName": "COM4",
-  "baudRate": 9600,
-  "dataBits": 8,
-  "parity": "None",
-  "stopBits": "One",
-  "handshake": "None",
-  "newLine": "\r\n",
-  "dtrEnable": false,
-  "rtsEnable": false,
-  "readTimeoutMs": 500,
-  "idleFlushMs": 150,
-  "browserFileExtensions": [
+  "PortName": "COM5",
+  "BaudRate": 9600,
+  "DataBits": 8,
+  "Parity": "None",
+  "StopBits": "One",
+  "Handshake": "None",
+  "NewLine": "\r\n",
+  "DtrEnable": false,
+  "RtsEnable": false,
+  "ReadTimeoutMs": 500,
+  "IdleFlushMs": 150,
+  "BrowserFileExtensions": [
     ".html",
     ".htm",
     ".svg",
@@ -20,8 +20,8 @@
     ".jpg",
     ".pdf"
   ],
-  "barcodeTargets": {
-    "123456789012": "https://example.com/product/123456789012",
+  "BarcodeTargets": {
+    "4630194642883": "https://example.com/product/123456789012",
     "987654321098": "C:\\Docs\\price-list.pdf"
   }
 }

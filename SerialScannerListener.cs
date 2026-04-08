@@ -5,6 +5,7 @@ using System.Text;
 internal sealed class SerialScannerListener : IDisposable
 {
     private readonly ScannerConfig _config;
+    private readonly Action<string> _scanSink;
     private readonly object _bufferLock = new();
     private readonly StringBuilder _buffer = new();
     private readonly CancellationTokenSource _shutdownSource = new();
@@ -12,10 +13,16 @@ internal sealed class SerialScannerListener : IDisposable
     private SerialPort? _port;
     private bool _disposed;
 
-    public SerialScannerListener(ScannerConfig config)
+    public SerialScannerListener(ScannerConfig config, Action<string>? scanSink = null)
     {
         _config = config;
-        _idleTimer = new System.Threading.Timer(FlushOnIdle, null, Timeout.Infinite, Timeout.Infinite);
+        _scanSink = scanSink ?? (_ => { });
+        _idleTimer = new System.Threading.Timer(
+            FlushOnIdle,
+            null,
+            Timeout.Infinite,
+            Timeout.Infinite
+        );
     }
 
     public void Start()
@@ -147,6 +154,7 @@ internal sealed class SerialScannerListener : IDisposable
     private void HandleScan(string rawValue)
     {
         Console.WriteLine($"Scanned: {rawValue}");
+        _scanSink(rawValue);
 
         var resolvedValue = ResolveScanTarget(rawValue);
 
@@ -162,7 +170,9 @@ internal sealed class SerialScannerListener : IDisposable
             && !string.IsNullOrWhiteSpace(uri.Scheme)
         )
         {
-            Process.Start(new ProcessStartInfo { FileName = resolvedValue, UseShellExecute = true });
+            Process.Start(
+                new ProcessStartInfo { FileName = resolvedValue, UseShellExecute = true }
+            );
 
             return;
         }
@@ -222,13 +232,10 @@ internal sealed class SerialScannerListener : IDisposable
             if (_config.ShouldOpenInBrowser(path))
             {
                 var fileUri = new Uri(Path.GetFullPath(path));
-                Process.Start(
-                    new ProcessStartInfo
-                    {
-                        FileName = fileUri.AbsoluteUri,
-                        UseShellExecute = true,
-                    }
-                );
+                var startInfo = new ProcessStartInfo();
+                startInfo.FileName = fileUri.AbsoluteUri;
+                startInfo.UseShellExecute = true;
+                Process.Start(startInfo);
 
                 return;
             }

@@ -11,11 +11,17 @@ internal sealed class ScannerApplication
 
     private readonly Action<string> _statusSink;
     private readonly Action<string> _errorSink;
+    private readonly Action<string> _scanSink;
 
-    public ScannerApplication(Action<string>? statusSink = null, Action<string>? errorSink = null)
+    public ScannerApplication(
+        Action<string>? statusSink = null,
+        Action<string>? errorSink = null,
+        Action<string>? scanSink = null
+    )
     {
         _statusSink = statusSink ?? (_ => { });
         _errorSink = errorSink ?? (_ => { });
+        _scanSink = scanSink ?? (_ => { });
     }
 
     public async Task RunAsync(string[] args, CancellationToken cancellationToken)
@@ -25,7 +31,7 @@ internal sealed class ScannerApplication
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            using var listener = new SerialScannerListener(config);
+            using var listener = new SerialScannerListener(config, _scanSink);
 
             try
             {

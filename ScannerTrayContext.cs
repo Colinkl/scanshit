@@ -14,10 +14,12 @@ internal sealed class ScannerTrayContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly Icon? _trayIcon;
     private readonly Bitmap? _menuLogo;
+    private readonly ToolStripMenuItem _lastScannedMenuItem;
     private readonly ToolStripMenuItem _statusMenuItem;
     private readonly CancellationTokenSource _shutdownSource = new();
     private CancellationTokenSource? _listenerSource;
     private Task? _scannerTask;
+    private string? _lastScannedBarcode;
     private string _statusText = "Starting scanner listener";
 
     public ScannerTrayContext(string[] args)
@@ -25,11 +27,20 @@ internal sealed class ScannerTrayContext : ApplicationContext
         _args = args;
         _menuLogo = LoadMenuLogo();
         _statusMenuItem = new ToolStripMenuItem(_statusText) { Enabled = false };
+        _lastScannedMenuItem = new ToolStripMenuItem(
+            "Last scanned: none",
+            null,
+            (_, _) => CopyLastScanned()
+        )
+        {
+            Enabled = false,
+        };
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ScancatMenuBanner(_menuLogo));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_statusMenuItem);
+        menu.Items.Add(_lastScannedMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem("Select COM port", null, (_, _) => SelectComPort()));
         menu.Items.Add(new ToolStripMenuItem("Open config", null, (_, _) => OpenConfig()));
@@ -57,7 +68,7 @@ internal sealed class ScannerTrayContext : ApplicationContext
 
         _listenerSource = CancellationTokenSource.CreateLinkedTokenSource(_shutdownSource.Token);
 
-        var app = new ScannerApplication(UpdateStatus, ShowError);
+        var app = new ScannerApplication(UpdateStatus, ShowError, UpdateLastScannedBarcode);
         _scannerTask = Task.Run(() => app.RunAsync(_args, _listenerSource.Token));
         _ = ObserveScannerTaskAsync(_scannerTask);
 
@@ -173,6 +184,38 @@ internal sealed class ScannerTrayContext : ApplicationContext
         );
     }
 
+    private void UpdateLastScannedBarcode(string barcode)
+    {
+        if (_notifyIcon.ContextMenuStrip?.InvokeRequired == true)
+        {
+            _notifyIcon.ContextMenuStrip.Invoke(() => UpdateLastScannedBarcode(barcode));
+            return;
+        }
+
+        _lastScannedBarcode = barcode;
+        _lastScannedMenuItem.Text = $"Last scanned: {TrimMenuText(barcode)}";
+        _lastScannedMenuItem.Enabled = true;
+    }
+
+    private void CopyLastScanned()
+    {
+        if (string.IsNullOrWhiteSpace(_lastScannedBarcode))
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(_lastScannedBarcode);
+            ShowInfo("Last barcode copied to clipboard.");
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Failed to copy barcode: {exception}");
+            ShowError($"Failed to copy barcode: {exception.Message}");
+        }
+    }
+
     private void UpdateStatus(string message)
     {
         if (_notifyIcon.ContextMenuStrip?.InvokeRequired == true)
@@ -202,6 +245,12 @@ internal sealed class ScannerTrayContext : ApplicationContext
     {
         const int maxLength = 63;
         return text.Length <= maxLength ? text : text[..maxLength];
+    }
+
+    private static string TrimMenuText(string text)
+    {
+        const int maxLength = 32;
+        return text.Length <= maxLength ? text : $"{text[..(maxLength - 3)]}...";
     }
 
     private static Icon LoadTrayIcon(out Icon? loadedIcon)
@@ -359,17 +408,17 @@ internal sealed class ScannerTrayContext : ApplicationContext
         {
             preferredPortName = SelectedPortName ?? preferredPortName;
 
-            var portNames = SerialPort.GetPortNames()
-                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            var portNames = SerialPort.GetPortNames();
+            Array.Sort(portNames, StringComparer.OrdinalIgnoreCase);
 
             _portsComboBox.BeginUpdate();
             _portsComboBox.Items.Clear();
             _portsComboBox.Items.AddRange(portNames);
             _portsComboBox.EndUpdate();
 
-            var selectedPort = portNames.FirstOrDefault(name =>
-                string.Equals(name, preferredPortName, StringComparison.OrdinalIgnoreCase)
+            var selectedPort = Array.Find(
+                portNames,
+                name => string.Equals(name, preferredPortName, StringComparison.OrdinalIgnoreCase)
             );
 
             if (selectedPort is not null)
