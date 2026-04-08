@@ -3,50 +3,47 @@ using System.Text.Json;
 internal sealed class ScannerApplication
 {
     private const string ConfigFileName = "scannerconfig.json";
+    private readonly Action<string> _statusSink;
+    private readonly Action<string> _errorSink;
 
-    public async Task RunAsync(string[] args)
+    public ScannerApplication(Action<string>? statusSink = null, Action<string>? errorSink = null)
+    {
+        _statusSink = statusSink ?? (_ => { });
+        _errorSink = errorSink ?? (_ => { });
+    }
+
+    public async Task RunAsync(string[] args, CancellationToken cancellationToken)
     {
         var configPath = ResolveConfigPath(args);
         var config = LoadConfig(configPath);
 
-        using var cancellationSource = new CancellationTokenSource();
+        _statusSink($"Listening on {config.PortName}");
 
-        Console.CancelKeyPress += (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancellationSource.Cancel();
-        };
-
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => cancellationSource.Cancel();
-
-        Console.WriteLine($"Listening for scanner input on {config.PortName}.");
-        Console.WriteLine("Press Ctrl+C to stop.");
-
-        while (!cancellationSource.IsCancellationRequested)
+        while (!cancellationToken.IsCancellationRequested)
         {
             using var listener = new SerialScannerListener(config);
 
             try
             {
                 listener.Start();
-                await listener.WaitForShutdownAsync(cancellationSource.Token);
+                await listener.WaitForShutdownAsync(cancellationToken);
             }
-            catch (OperationCanceledException) when (cancellationSource.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
             catch (Exception exception)
             {
-                Console.Error.WriteLine($"Scanner listener failed: {exception.Message}");
+                _errorSink($"Scanner listener failed: {exception.Message}");
             }
 
-            if (!cancellationSource.IsCancellationRequested)
+            if (!cancellationToken.IsCancellationRequested)
             {
-                Console.WriteLine("Retrying COM connection in 5 seconds...");
+                _statusSink($"Retrying {config.PortName} in 5 seconds");
 
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationSource.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -56,7 +53,7 @@ internal sealed class ScannerApplication
         }
     }
 
-    private static string ResolveConfigPath(IReadOnlyList<string> args)
+    public static string ResolveConfigPath(IReadOnlyList<string> args)
     {
         if (args.Count > 0 && !string.IsNullOrWhiteSpace(args[0]))
         {
@@ -66,7 +63,7 @@ internal sealed class ScannerApplication
         return Path.Combine(AppContext.BaseDirectory, ConfigFileName);
     }
 
-    private static ScannerConfig LoadConfig(string configPath)
+    public static ScannerConfig LoadConfig(string configPath)
     {
         if (!File.Exists(configPath))
         {

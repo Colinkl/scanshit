@@ -11,6 +11,7 @@ internal sealed class ScannerConfig
     public bool RtsEnable { get; init; }
     public int ReadTimeoutMs { get; init; } = 500;
     public int IdleFlushMs { get; init; } = 150;
+    public string[] BrowserFileExtensions { get; set; } = [".html", ".htm"];
 
     public void Validate()
     {
@@ -33,5 +34,23 @@ internal sealed class ScannerConfig
         {
             throw new InvalidOperationException("IdleFlushMs must be greater than 0.");
         }
+
+        BrowserFileExtensions = BrowserFileExtensions
+            .Where(extension => !string.IsNullOrWhiteSpace(extension))
+            .Select(NormalizeExtension)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public bool ShouldOpenInBrowser(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return BrowserFileExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeExtension(string extension)
+    {
+        var trimmed = extension.Trim();
+        return trimmed.StartsWith('.') ? trimmed : $".{trimmed}";
     }
 }

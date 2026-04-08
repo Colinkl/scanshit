@@ -8,14 +8,14 @@ internal sealed class SerialScannerListener : IDisposable
     private readonly object _bufferLock = new();
     private readonly StringBuilder _buffer = new();
     private readonly CancellationTokenSource _shutdownSource = new();
-    private readonly Timer _idleTimer;
+    private readonly System.Threading.Timer _idleTimer;
     private SerialPort? _port;
     private bool _disposed;
 
     public SerialScannerListener(ScannerConfig config)
     {
         _config = config;
-        _idleTimer = new Timer(FlushOnIdle, null, Timeout.Infinite, Timeout.Infinite);
+        _idleTimer = new System.Threading.Timer(FlushOnIdle, null, Timeout.Infinite, Timeout.Infinite);
     }
 
     public void Start()
@@ -144,7 +144,7 @@ internal sealed class SerialScannerListener : IDisposable
         }
     }
 
-    private static void HandleScan(string rawValue)
+    private void HandleScan(string rawValue)
     {
         Console.WriteLine($"Scanned: {rawValue}");
 
@@ -188,7 +188,7 @@ internal sealed class SerialScannerListener : IDisposable
         return false;
     }
 
-    private static void OpenLocalPath(string path)
+    private void OpenLocalPath(string path)
     {
         if (Directory.Exists(path))
         {
@@ -206,6 +206,20 @@ internal sealed class SerialScannerListener : IDisposable
 
         if (File.Exists(path))
         {
+            if (_config.ShouldOpenInBrowser(path))
+            {
+                var fileUri = new Uri(Path.GetFullPath(path));
+                Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = fileUri.AbsoluteUri,
+                        UseShellExecute = true,
+                    }
+                );
+
+                return;
+            }
+
             Process.Start(
                 new ProcessStartInfo
                 {

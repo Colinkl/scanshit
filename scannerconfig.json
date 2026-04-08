@@ -11,10 +11,13 @@
   "readTimeoutMs": 500,
   "idleFlushMs": 150,
   "browserFileExtensions": [
-    ".htm",
     ".html",
-    ".pdf",
+    ".htm",
     ".svg",
-    ".txt"
+    ".txt",
+    ".json",
+    ".png",
+    ".jpg",
+    ".pdf"
   ]
 }
